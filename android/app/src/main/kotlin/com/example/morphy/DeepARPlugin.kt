@@ -27,6 +27,7 @@ import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 class DeepARPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, AREventListener {
     
     private lateinit var channel: MethodChannel
@@ -46,6 +47,13 @@ class DeepARPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, AREventLis
     private var recording = false
     private var videoFileName: File? = null
     private var currentEffect = 0
+    
+    // Gender classification
+    private var genderClassifier: GenderClassifier? = null
+    private var classificationEnabled = true
+    private var frameCount = 0
+    private val CLASSIFY_EVERY_N_FRAMES = 10
+    private val classificationExecutor = Executors.newSingleThreadExecutor()
     
     private val effects = listOf(
         "none",
@@ -82,6 +90,12 @@ class DeepARPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, AREventLis
     
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
+        // Initialize gender classifier
+        try {
+            genderClassifier = GenderClassifier(binding.activity)
+        } catch (e: Exception) {
+            android.util.Log.e("DeepARPlugin", "Failed to init GenderClassifier: ${e.message}")
+        }
     }
     
     override fun onDetachedFromActivityForConfigChanges() {
@@ -131,6 +145,10 @@ class DeepARPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, AREventLis
             "dispose" -> {
                 cleanup()
                 result.success(null)
+            }
+            "setClassificationEnabled" -> {
+                classificationEnabled = call.argument<Boolean>("enabled") ?: true
+                result.success(true)
             }
             else -> {
                 result.notImplemented()
@@ -223,6 +241,13 @@ class DeepARPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, AREventLis
         val buffer = image.planes[0].buffer
         buffer.rewind()
         
+        // Copy bitmap data for classification BEFORE any processing
+        var classificationBitmap: Bitmap? = null
+        frameCount++
+        if (classificationEnabled && frameCount % CLASSIFY_EVERY_N_FRAMES == 0) {
+            classificationBitmap = imageProxyToBitmap(image)
+        }
+        
         buffers?.let { bufs ->
             bufs[currentBuffer].clear()
             bufs[currentBuffer].put(buffer)
@@ -241,7 +266,53 @@ class DeepARPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, AREventLis
             currentBuffer = (currentBuffer + 1) % NUMBER_OF_BUFFERS
         }
         
+        // Close image AFTER copying bitmap data
         image.close()
+        
+        // Gender classification (runs on background thread with already-copied bitmap)
+        classificationBitmap?.let { bitmap ->
+            classificationExecutor.execute {
+                try {
+                    genderClassifier?.classifyBitmap(bitmap)?.let { result ->
+                        activity?.runOnUiThread {
+                            channel.invokeMethod("onGenderClassified", mapOf(
+                                "gender" to result.gender,
+                                "confidence" to result.confidence
+                            ))
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("DeepARPlugin", "Classification error: ${e.message}")
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+        }
+    }
+    
+    /**
+     * Convert ImageProxy (RGBA_8888) to Bitmap - must be called before image.close()
+     */
+    private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
+        return try {
+            val buffer = imageProxy.planes[0].buffer
+            buffer.rewind()
+            val bytes = ByteArray(buffer.remaining())
+            buffer.get(bytes)
+            
+            val bitmap = Bitmap.createBitmap(
+                imageProxy.width,
+                imageProxy.height,
+                Bitmap.Config.ARGB_8888
+            )
+            
+            val pixelBuffer = ByteBuffer.wrap(bytes)
+            bitmap.copyPixelsFromBuffer(pixelBuffer)
+            bitmap
+        } catch (e: Exception) {
+            android.util.Log.e("DeepARPlugin", "Failed to convert ImageProxy to Bitmap: ${e.message}")
+            null
+        }
     }
     
     private fun switchCamera(result: Result) {
@@ -330,6 +401,11 @@ class DeepARPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, AREventLis
         
         textureEntry?.release()
         textureEntry = null
+        
+        // Cleanup gender classifier
+        genderClassifier?.close()
+        genderClassifier = null
+        classificationExecutor.shutdown()
     }
     
     // AREventListener implementations

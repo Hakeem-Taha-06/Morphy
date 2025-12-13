@@ -4,7 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/deepar_service.dart';
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({Key? key}) : super(key: key);
+  const CameraScreen({super.key});
   @override
   State<CameraScreen> createState() => _CameraScreenState();
 }

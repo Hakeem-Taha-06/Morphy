@@ -29,6 +29,10 @@ class _CameraScreenState extends State<CameraScreen> {
   double _filterIntensity = 0.5;
   bool _isRecording = false;
 
+  // Gender classification
+  Gender _detectedGender = Gender.unknown;
+  double _genderConfidence = 0.0;
+
   // DeepAR
   late DeepARService _deepARService;
   int? _textureId;
@@ -104,6 +108,19 @@ class _CameraScreenState extends State<CameraScreen> {
 
     _deepARService.onError = (error) {
       debugPrint('DeepAR error: $error');
+    };
+
+    // Gender classification callback
+    _deepARService.onGenderClassified = (result) {
+      if (mounted && result.confidence > 0.6) {
+        setState(() {
+          _detectedGender = result.isMale ? Gender.male : Gender.female;
+          _genderConfidence = result.confidence;
+        });
+        debugPrint(
+          'Gender: ${result.gender} (${(result.confidence * 100).toInt()}%)',
+        );
+      }
     };
   }
 
@@ -299,7 +316,10 @@ class _CameraScreenState extends State<CameraScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // Gender indicator (left)
-          const GenderIndicator(gender: Gender.male),
+          GenderIndicator(
+            gender: _detectedGender,
+            confidence: _genderConfidence,
+          ),
 
           // App title (center)
           Text(

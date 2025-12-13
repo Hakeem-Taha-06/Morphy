@@ -28,6 +28,12 @@ const List<FilterItem> sampleFilters = [
     effectFile: 'none',
   ),
   FilterItem(
+    id: 'test',
+    name: 'Test',
+    colors: [Color(0xFF9370DB), Color(0xFF00CED1)],
+    effectFile: 'test_euro_guy.deepar',
+  ),
+  FilterItem(
     id: 'makeup',
     name: 'Makeup',
     colors: [Color(0xFFFF6B9D), Color(0xFFC44569)],
@@ -56,12 +62,6 @@ const List<FilterItem> sampleFilters = [
     name: 'Fire',
     colors: [Color(0xFFFF4500), Color(0xFFFF6347)],
     effectFile: 'Fire_Effect.deepar',
-  ),
-  FilterItem(
-    id: 'galaxy',
-    name: 'Galaxy',
-    colors: [Color(0xFF191970), Color(0xFF4B0082)],
-    effectFile: 'galaxy_background.deepar',
   ),
   FilterItem(
     id: 'neon',
@@ -134,6 +134,12 @@ const List<FilterItem> sampleFilters = [
     name: 'Split View',
     colors: [Color(0xFF9370DB), Color(0xFF00CED1)],
     effectFile: 'Split_View_Look.deepar',
+  ),
+  FilterItem(
+    id: 'galaxy',
+    name: 'Galaxy',
+    colors: [Color(0xFF191970), Color(0xFF4B0082)],
+    effectFile: 'galaxy_background.deepar',
   ),
 ];
 

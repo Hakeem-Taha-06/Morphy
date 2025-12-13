@@ -15,6 +15,17 @@ class CameraInfo {
   double get aspectRatio => width / height;
 }
 
+/// Represents a gender classification result from the native classifier
+class GenderClassificationResult {
+  final String gender;
+  final double confidence;
+
+  GenderClassificationResult({required this.gender, required this.confidence});
+
+  bool get isMale => gender == 'male';
+  bool get isFemale => gender == 'female';
+}
+
 class DeepARService {
   static const MethodChannel _channel = MethodChannel('deepar_plugin');
 
@@ -27,6 +38,7 @@ class DeepARService {
   Function(bool)? onFaceVisibilityChanged;
   Function(String)? onEffectSwitched;
   Function(String)? onError;
+  Function(GenderClassificationResult)? onGenderClassified;
 
   DeepARService() {
     _channel.setMethodCallHandler(_handleMethodCall);
@@ -66,6 +78,13 @@ class DeepARService {
             call.arguments['errorMessage'] as String? ??
             'Unknown error';
         onError?.call(error);
+        break;
+      case 'onGenderClassified':
+        final gender = call.arguments['gender'] as String;
+        final confidence = (call.arguments['confidence'] as num).toDouble();
+        onGenderClassified?.call(
+          GenderClassificationResult(gender: gender, confidence: confidence),
+        );
         break;
     }
   }
@@ -186,6 +205,19 @@ class DeepARService {
       await _channel.invokeMethod('dispose');
     } catch (e) {
       print('Dispose error: $e');
+    }
+  }
+
+  /// Enable or disable gender classification
+  Future<bool> setClassificationEnabled(bool enabled) async {
+    try {
+      final result = await _channel.invokeMethod('setClassificationEnabled', {
+        'enabled': enabled,
+      });
+      return result as bool;
+    } catch (e) {
+      print('Set classification enabled error: $e');
+      return false;
     }
   }
 }

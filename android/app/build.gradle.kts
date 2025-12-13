@@ -65,4 +65,11 @@ dependencies {
     
     // Guava for ListenableFuture (required by CameraX)
     implementation("com.google.guava:guava:31.1-android")
+    
+    // TensorFlow Lite for gender classification
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    
+    // ML Kit Face Detection (lightweight alternative to OpenCV)
+    implementation("com.google.mlkit:face-detection:16.1.5")
 }
