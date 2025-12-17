@@ -1,0 +1,20 @@
+{
+    "male_files": [
+        {
+            "name": "burning_effect.deepar",
+            "url": "https://github.com/AhmadEnan/Morphy/blob/main/assets/effects/burning_effect.deepar"
+        }
+    ],
+    "female_files": [
+        {
+            "name": "MakeupLook.deepar",
+            "url": "https://github.com/AhmadEnan/Morphy/blob/main/assets/effects/MakeupLook.deepar"
+        }
+    ],
+    "both_files": [
+        {
+            "name": "Elephant_Trunk.deepar",
+            "url": "https://github.com/AhmadEnan/Morphy/raw/refs/heads/main/assets/effects/Elephant_Trunk.deepar?raw=true"
+        }
+    ]
+}
