@@ -15,33 +15,28 @@ class AssetSyncService {
   /// - GitHub File (Blob): "https://github.com/user/repo/blob/main/image.png"
   /// - GitHub Folder: "https://github.com/user/repo/tree/main/assets"
   /// - Google Drive File/Manifest: "https://drive.google.com/file/d/.../view"
+  ///
+  /// For "assets_manifest" format (categorized by gender):
+  /// ```json
+  /// {
+  ///   "male_files": [{"name": "file.deepar", "url": "..."}],
+  ///   "female_files": [{"name": "file.deepar", "url": "..."}],
+  ///   "both_files": [{"name": "file.deepar", "url": "..."}]
+  /// }
+  /// ```
   Future<void> syncAssets({
     required String targetUrl,
     required String localFolderName,
   }) async {
     debugPrint('Starting sync for $localFolderName from $targetUrl...');
 
-    // 1. Setup Local Directory
-    Directory? baseDir;
-    if (Platform.isAndroid) {
-      baseDir = Directory('/storage/emulated/0/Download');
-    } else {
-      baseDir = await getApplicationDocumentsDirectory();
-    }
-
+    // 1. Setup Local Directory - Always use internal app storage
+    final baseDir = await getApplicationDocumentsDirectory();
     final localDir = Directory('${baseDir.path}/$localFolderName');
 
     // Ensure directory exists
     if (!await localDir.exists()) {
-      try {
-        await localDir.create(recursive: true);
-      } catch (e) {
-        debugPrint('Error creating dir: $e. Fallback to app docs.');
-        final internalDir = await getApplicationDocumentsDirectory();
-        await Directory(
-          '${internalDir.path}/$localFolderName',
-        ).create(recursive: true);
-      }
+      await localDir.create(recursive: true);
     }
 
     // 2. Identify Source Type
@@ -52,6 +47,21 @@ class AssetSyncService {
     }
 
     debugPrint('Asset sync completed for $localFolderName');
+  }
+
+  /// Get the base directory path for assets (internal app storage)
+  static Future<String> getAssetsBasePath(String localFolderName) async {
+    final baseDir = await getApplicationDocumentsDirectory();
+    return '${baseDir.path}/$localFolderName';
+  }
+
+  /// Get the effects directory path for a specific gender category
+  static Future<String> getEffectsPath(
+    String localFolderName,
+    String gender,
+  ) async {
+    final basePath = await getAssetsBasePath(localFolderName);
+    return '$basePath/effects/$gender';
   }
 
   // --- GitHub Logic ---
@@ -235,6 +245,7 @@ class AssetSyncService {
 
     // 1. Try to parse as JSON Manifest
     bool isManifest = false;
+    bool isAssetsManifest = false;
     Map<String, dynamic>? manifest;
 
     try {
@@ -249,21 +260,126 @@ class AssetSyncService {
         jsonString = jsonString.replaceAll(RegExp(r',\s*}'), '}');
 
         final decoded = json.decode(jsonString);
-        if (decoded is Map<String, dynamic> && decoded.containsKey('files')) {
-          isManifest = true;
-          manifest = decoded;
+        if (decoded is Map<String, dynamic>) {
+          // Check for "assets_manifest" format with gender categories
+          if (decoded.containsKey('male_files') ||
+              decoded.containsKey('female_files') ||
+              decoded.containsKey('both_files')) {
+            isAssetsManifest = true;
+            manifest = decoded;
+          }
+          // Check for standard "files" format
+          else if (decoded.containsKey('files')) {
+            isManifest = true;
+            manifest = decoded;
+          }
         }
       }
     } catch (_) {
       // Not a valid JSON manifest, proceed to single file logic
     }
 
-    if (isManifest && manifest != null) {
+    if (isAssetsManifest && manifest != null) {
+      debugPrint(
+        'Detected Assets Manifest (categorized). Syncing files by category...',
+      );
+      await _syncAssetsManifestContent(manifest, localDir);
+    } else if (isManifest && manifest != null) {
       debugPrint('Detected Valid JSON Manifest. Syncing files...');
       await _syncManifestContent(manifest, localDir);
     } else {
       debugPrint('Not a manifest. Treating as single file download.');
       await _saveSingleFileResponse(response, directUrl, localDir);
+    }
+  }
+
+  /// Sync files from assets_manifest format (categorized by gender)
+  /// Structure: { "male_files": [...], "female_files": [...], "both_files": [...] }
+  Future<void> _syncAssetsManifestContent(
+    Map<String, dynamic> manifest,
+    Directory localDir,
+  ) async {
+    // Create effects directory structure
+    final effectsDir = Directory('${localDir.path}/effects');
+    final maleDir = Directory('${effectsDir.path}/male');
+    final femaleDir = Directory('${effectsDir.path}/female');
+    final bothDir = Directory('${effectsDir.path}/both');
+
+    // Create all directories
+    for (final dir in [effectsDir, maleDir, femaleDir, bothDir]) {
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+        debugPrint('Created directory: ${dir.path}');
+      }
+    }
+
+    // Process each category
+    await _syncCategoryFiles(manifest['male_files'], maleDir, 'male');
+    await _syncCategoryFiles(manifest['female_files'], femaleDir, 'female');
+    await _syncCategoryFiles(manifest['both_files'], bothDir, 'both');
+  }
+
+  /// Sync files for a specific category
+  Future<void> _syncCategoryFiles(
+    List<dynamic>? fileList,
+    Directory targetDir,
+    String category,
+  ) async {
+    if (fileList == null || fileList.isEmpty) {
+      debugPrint('No files in $category category');
+      return;
+    }
+
+    // Filter out empty objects
+    final validFiles = fileList.where((f) {
+      if (f is Map) {
+        return f.containsKey('name') &&
+            f.containsKey('url') &&
+            f['name'] != null &&
+            f['name'].toString().isNotEmpty;
+      }
+      return false;
+    }).toList();
+
+    if (validFiles.isEmpty) {
+      debugPrint('No valid files in $category category');
+      return;
+    }
+
+    final Set<String> serverFileNames = validFiles
+        .map((f) => f['name'].toString())
+        .toSet();
+
+    // Delete obsolete files in this category folder
+    if (await targetDir.exists()) {
+      for (var entity in targetDir.listSync()) {
+        if (entity is File) {
+          final name = entity.uri.pathSegments.last;
+          if (!serverFileNames.contains(name)) {
+            debugPrint('Deleting obsolete $category file: $name');
+            await entity.delete();
+          }
+        }
+      }
+    }
+
+    // Download files
+    for (var fileItem in validFiles) {
+      final String fileName = fileItem['name'];
+      final String fileUrl = _convertToDirectDownloadUrl(fileItem['url']);
+      final File localFile = File('${targetDir.path}/$fileName');
+
+      if (!await localFile.exists()) {
+        debugPrint('Downloading $category/$fileName...');
+        try {
+          await _downloadFile(fileUrl, localFile);
+          debugPrint('Success! Downloaded to: ${localFile.path}');
+        } catch (e) {
+          debugPrint('Failed to download $fileName: $e');
+        }
+      } else {
+        debugPrint('File exists: $category/$fileName');
+      }
     }
   }
 
